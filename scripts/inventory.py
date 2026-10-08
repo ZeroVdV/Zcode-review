@@ -1,6 +1,6 @@
 """Inventory of a project, to split a whole-project review among agents. No LLM, no tokens.
 
-Usage: python inventory.py [root] [--depth 2] [--cap 3000] [--exclude GLOB ...] [--top 8]
+Usage: python inventory.py [root] [--depth 2] [--cap 3000] [--exclude GLOB ...] [--ext EXT ...] [--top 8]
 
 Counts reviewable source lines per directory (docs, config, lock files, generated and binary files are
 listed apart, not counted), shows the tree down to --depth, the languages, the largest files, and proposes
@@ -9,49 +9,27 @@ small neighbours are packed together up to the cap. A directory with no subdirec
 the cap is flagged OVERSIZE: it needs a split by files, decided by whoever plans the work.
 
 The proposal ends with lines `name: path path ...` (a path is a directory or a file): paste them, edited, into
-.claude/state/review/areas.txt, the format cross_areas.py reads. It is a hint made from sizes only; the
+.review-kit/areas.txt, the format cross_areas.py reads. It is a hint made from sizes only; the
 planner is expected to adjust it by what the names say (a service stays whole, tests apart, and so on)."""
 
 import argparse
 import fnmatch
 import os
 import re
-import subprocess
 from collections import Counter, defaultdict
 
-from _common import IGNORE_DIRS, SKIP_EXT, norm, utf8
+from _common import EXCLUDE_GLOBS, SKIP_EXT, STATE_DIR, all_files, count_lines, git, is_source, utf8
 
-SOURCE_EXT = {"py", "js", "ts", "tsx", "jsx", "mjs", "cjs", "go", "rs", "java", "rb", "php", "cs", "kt", "swift",
-              "c", "h", "cpp", "hpp", "sql", "sh", "vue", "svelte", "scala", "dart"}
-DEFAULT_EXCLUDE = ["*.lock", "*-lock.json", "*.min.*", "*.map", "graphify-out/*", ".claude/*", ".git/*",
-                   "*_pb2.py", "*.generated.*", "*.gen.*"]
-TESTS = re.compile(r"(^|/)(tests?|__tests__|spec|specs)(/|$)|(^|/)test_[^/]*$|_test\.[a-z]+$|\.(test|spec)\.[a-z]+$", re.I)
-MIGRATIONS = re.compile(r"(^|/)(migrations?|alembic)(/|$)", re.I)
+TESTS = re.compile(r"(^|/)(tests?|__tests__|spec|specs)(/|$)|(^|/)(test_[^/]*|conftest\.py|tests\.py)$"
+                   r"|_test\.[a-z]+$|\.(test|spec|cy)\.[a-z]+$", re.I)
+MIGRATIONS = re.compile(r"(^|/)(migrations?|migrate|alembic)(/|$)", re.I)
 
 
-def list_files(root):
-    r = subprocess.run(["git", "ls-files", "--cached", "--others", "--exclude-standard"], cwd=root,
-                       capture_output=True, text=True, encoding="utf-8")
-    if r.returncode == 0 and r.stdout.strip():
-        return [norm(f) for f in r.stdout.split("\n") if f]
-    out = []
-    for d, dirs, files in os.walk(root):
-        dirs[:] = [x for x in dirs if x not in IGNORE_DIRS]
-        out += [norm(os.path.relpath(os.path.join(d, f), root)) for f in files]
-    return out
-
-
-def count_lines(path):
-    with open(path, "rb") as f:
-        data = f.read()
-    return data.count(b"\n") + (1 if data and not data.endswith(b"\n") else 0)
-
-
-def classify(path):
+def classify(path, extra=()):
     ext = os.path.splitext(path)[1].lower().lstrip(".")
     if "." + ext in SKIP_EXT:
         return "binary"
-    if ext not in SOURCE_EXT:
+    if not is_source(path, extra):
         return "docs" if ext in {"md", "rst", "txt"} else "other"
     if MIGRATIONS.search(path):
         return "migrations"
@@ -82,7 +60,8 @@ def split(node, cap, soft=1.25):
         return [([node.path or "."], node.lines, node.files, node.lines > cap * soft)]
     small, finals = [], []
     if node.own:
-        small.append(([f for f, _ in node.own], sum(n for _, n in node.own), len(node.own), False))
+        own = sum(n for _, n in node.own)
+        small.append(([f for f, _ in node.own], own, len(node.own), own > cap * soft))
     for name in sorted(node.kids):
         kid = node.kids[name]
         if kid.lines <= cap * soft or not kid.kids:
@@ -105,14 +84,17 @@ def split(node, cap, soft=1.25):
 
 
 def area_name(paths, used):
-    parents = {os.path.dirname(p.rstrip("/")) for p in paths}
-    files_only = all("." in os.path.basename(p) for p in paths)
-    if len(paths) == 1 and not files_only:
-        base = paths[0].strip("/")
+    parents = {os.path.dirname(p) for p in paths}
+    files_only = all(os.path.isfile(p) for p in paths)
+    if paths == ["."]:
+        base = "root"
+    elif len(paths) == 1 and not files_only:
+        base = paths[0]
     else:
-        parent = parents.pop() if len(parents) == 1 else os.path.commonpath([p.rstrip("/") for p in paths] or ["."])
-        base = (parent or "root") + ("-files" if files_only and len(parents) == 0 else "") + (f"+{len(paths)}" if not files_only else "")
-    base = re.sub(r"[^A-Za-z0-9_+.-]", "-", base.replace("/", "-"))[:40] or "root"
+        parent = parents.pop() if len(parents) == 1 else os.path.commonpath(paths)
+        base = (parent or "root") + ("-files" if files_only else f"+{len(paths)}")
+    # the end of a long path says more than its start
+    base = re.sub(r"[^A-Za-z0-9_+.-]", "-", base)[-40:].strip("-") or "root"
     name, i = base, 2
     while name in used:
         name, i = f"{base}-{i}", i + 1
@@ -127,21 +109,29 @@ def main():
     ap.add_argument("--depth", type=int, default=2)
     ap.add_argument("--cap", type=int, default=3000)
     ap.add_argument("--exclude", nargs="*", default=[])
+    ap.add_argument("--ext", nargs="*", default=[], help="extra source extensions to count as reviewable")
     ap.add_argument("--top", type=int, default=8)
     a = ap.parse_args()
+    if not os.path.isdir(a.root):
+        raise SystemExit(f"{a.root}: not a directory")
     os.chdir(a.root)
-    excl = DEFAULT_EXCLUDE + a.exclude
-    kinds, rows, big = defaultdict(lambda: [0, 0]), [], []
-    for f in list_files("."):
-        if not os.path.isfile(f) or any(fnmatch.fnmatch(f, p) for p in excl):
+    excl = EXCLUDE_GLOBS + a.exclude
+    kinds, rows = defaultdict(lambda: [0, 0]), []
+    for f in all_files("."):
+        if any(fnmatch.fnmatch(f, p) for p in excl):
             continue
-        k = classify(f)
+        k = classify(f, a.ext)
         n = count_lines(f)
         kinds[k][0] += 1; kinds[k][1] += n
         if k in ("code", "tests", "migrations"):
             rows.append((f, n))
     root = build_tree(rows)
     print(f"# Inventory: {os.getcwd()}")
+    top = git("rev-parse", "--show-toplevel")
+    if top and top.returncode == 0 and os.path.realpath(top.stdout.strip()) != os.path.realpath("."):
+        print("NOTE: this is a subfolder of a git repository. The paths below are relative to this folder; the other "
+              "scripts expect paths relative to the directory they run in, so run them all from here or from the "
+              "repository root, not a mix.")
     print("\n## Totals")
     for k in ("code", "tests", "migrations", "docs", "other", "binary"):
         if k in kinds:
@@ -162,7 +152,7 @@ def main():
     if root.own:
         print(f"  (files at the root: {len(root.own)}, {sum(n for _, n in root.own)} lines)")
 
-    print(f"\n## Largest files")
+    print("\n## Largest files")
     for f, n in sorted(rows, key=lambda x: -x[1])[:a.top]:
         print(f"  {n:5d}  {f}")
 
@@ -172,8 +162,8 @@ def main():
         name = area_name(paths, used)
         flag = "  OVERSIZE: split by files" if over else ""
         print(f"  {name:32s} {ln:6d} lines {nf:4d} files{flag}")
-        lines_out.append(f"{name}: " + " ".join(paths))
-    print("\n## areas.txt format (edit, then save to .claude/state/review/areas.txt)")
+        lines_out.append(f"{name}: " + " ".join(f'"{p}"' if re.search(r"[\s#]", p) else p for p in paths))
+    print(f"\n## areas.txt format (edit, then save to {STATE_DIR}/areas.txt; quote a path that has spaces)")
     print("\n".join(lines_out))
 
 

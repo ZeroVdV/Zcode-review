@@ -1,6 +1,8 @@
 {
   "name": "review-kit",
-  "version": "0.5.0",
-  "description": "Read-only code review for structure and cleanliness, a refactor planner and a whole-project orchestrator. Language-agnostic; uses the project's own rules as the yardstick.",
-  "author": { "name": "augusto" }
+  "version": "0.6.0",
+  "description": "Read-only code review for structure and cleanliness, a refactor planner and a whole-project orchestrator. Uses the project's own rules as the yardstick.",
+  "author": { "name": "augusto" },
+  "repository": "https://github.com/ZeroVdV/Zcode-review",
+  "keywords": ["code-review", "architecture", "refactoring"]
 }

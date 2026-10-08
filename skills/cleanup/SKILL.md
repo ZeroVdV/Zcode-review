@@ -4,17 +4,21 @@ description: >
   Read-only review for code cleanliness at the function and file level: unclear
   names, long or deep functions, duplication that is really the same behavior,
   dead code, unused parameters, needless wrappers. Use when the user asks for a
-  clean-code review, "what can be tidied", or says "/review-kit:cleanup".
-  Takes an optional path. Reports and proposes; never edits code. For
-  module-level coupling use review-kit:structure.
+  clean-code review or a report of what could be tidied, or says
+  "/review-kit:cleanup". Takes a path (asks when missing). Reports and proposes;
+  never edits code. Not for reviewing a diff or pull request, hunting bugs, or
+  actually tidying or simplifying the code. For module-level coupling use
+  review-kit:structure.
+argument-hint: "<path>"
+disallowed-tools: Edit, NotebookEdit
 ---
 
 Review readability and tidiness, not architecture and not bugs. Read-only: write a report, change no code.
 This is the "make it better" counterpart to a "make it shorter" tool: shorter is not the goal, clearer is.
 
-First read `../../references/common.md` (relative to this skill's base directory) and follow it: it holds the scripts, finding rules, tracing, ledger and output format shared by every review-kit skill. The report name is `review-cleanup-<scope-slug>.md`.
+The plugin folder is `${CLAUDE_PLUGIN_ROOT}` (if that shows as literal text, it is the folder two levels above this skill's base directory). First read `references/common.md` in it and follow it: it holds the scripts, finding rules, tracing, ledger and output format shared by every review-kit skill. Your lens is `cleanup`: pass `--lens cleanup` to `ledger_check.py`, and the report is `.review-kit/review-cleanup-<scope-slug>.md`.
 
-Scope: the argument must be a path, module or directory. If it is not (or is empty), ask which scope before reading anything.
+Scope: the argument must be a path, module or directory. If it is missing or is not one, ask which scope before reading anything.
 
 Yardstick: the project's own conventions first (`CLAUDE.md`, `AGENTS.md`, lint config), else the dominant local style.
 

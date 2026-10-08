@@ -1,2 +1,6 @@
-# Auto detect text files and perform LF normalization
+# Text files are stored with LF and checked out with LF on every system
 * text=auto
+*.py text eol=lf
+*.md text eol=lf
+*.json text eol=lf
+*.yml text eol=lf
