@@ -21,8 +21,8 @@ Facts a script can get exactly are not left to the model. The scripts need only 
 
 | Script | Purpose |
 |---|---|
-| `scripts/prepare.py <scope...>` | Size of the scope, graph freshness, who depends on it and what it depends on, `TODO`/`FIXME`/`HACK` markers (plus any you pass), env vars read vs. the example env file, long SQL strings repeated elsewhere. |
-| `scripts/ledger_check.py <scope...>` | Compares the review ledger with the files by `git hash-object`; says which findings can be **carried** unchanged and which must be re-verified. `stamp` writes a ledger row. |
+| `scripts/prepare.py <scope...>` | Size of the scope (its source files; real env files are never read), graph freshness, who depends on it and what it depends on, `TODO`/`FIXME`/`HACK` markers (plus any you pass), env vars read vs. the example env file, long SQL strings repeated elsewhere. |
+| `scripts/ledger_check.py <scope...>` | Compares the review ledger with the files by `git hash-object`; says which findings can be **carried** unchanged and which must be re-verified. `stamp` writes a ledger row (`--findings-file` keeps the text away from the shell). |
 | `scripts/trace.py <file>` | Callers and dependencies (up/down, hop-limited) from a graphify `graph.json` (`graphify-out/graph.json`). |
 | `scripts/verify_refs.py <report>` | Checks that every cited `file:line` exists and is inside the file. Catches invented or stale references. |
 | `scripts/inventory.py [root]` | Reviewable lines per folder, languages, largest files, and a size-based proposal of areas. |
@@ -70,8 +70,15 @@ Measurements come from a few runs on one mid-size Python project; treat them as 
 skills/            structure, cleanup, plan, project
 references/        common.md (rules shared by the review skills)
 scripts/           the Python helpers above
+tests/             tests for the scripts
 ```
 
 ## Contributing
 
 This repository is public. Keep everything in it generic: see [`CLAUDE.md`](CLAUDE.md).
+
+The scripts have tests that run each one on a throwaway git repository (stdlib only):
+
+```
+python -m unittest discover -s tests -v
+```

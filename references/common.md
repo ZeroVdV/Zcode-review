@@ -9,6 +9,8 @@ They live at `../../scripts/` relative to the skill's base directory. Run them a
 - `trace.py <file> --entry <main file> --hops 2`: callers and dependencies from the code graph.
 - `verify_refs.py <report>`: checks that every cited `file:line` exists.
 
+Run them from the project root with scope paths relative to it. A scope is its source files: what git does not ignore, with a known source extension. Docs, config, lock and generated files, tool state (`.claude/`, `graphify-out/`) and real env files (`.env`, `.env.local`) are left out and never read; a file named directly is taken as is. If the project's language is not counted, pass `--ext <extension>` to `prepare.py`, `ledger_check.py` and `inventory.py` alike.
+
 ## Before reading code
 1. Run `prepare.py <scope>`. A STALE graph warning means reach is unreliable: ask the user to run `graphify update .` (no LLM) or fall back to grep.
 2. Run `ledger_check.py <scope>` (see Ledger).
@@ -42,12 +44,12 @@ For every finding that proposes moving, merging, renaming or removing something:
 - If it cannot be proven (dynamic dispatch, reflection, external callers), write "unproven" instead of guessing.
 
 ## Ledger
-One ledger file per area: `.claude/state/review/ledger/<last folder of the scope>.md`. Row per file: `path | git hash-object | date | one-line summary | decisions (intentional / leave alone) | findings`. The findings cell holds each finding as a self-contained line: id, rank, `file:line`, the claim, the consequence, kind/risk, and `deps:` with `path@hash7` (7-char `git hash-object`) for every other file it cites, including files outside the scope. Example: `F2 [rank 2] src/jobs.py:30-42 release() takes a second pool connection while the first is still open; the pool can stall (behavior-change, medium) deps: src/shared/client.py@a1b2c3d`. Keep Deferred, Needs external check, Minor and Leave alone under their own headings in the same file.
+One ledger file per area: `.claude/state/review/ledger/<last folder of the scope>.md` (`root.md` when the scope is `.`). Row per file: `path | git hash-object | date | one-line summary | decisions (intentional / leave alone) | findings`. The findings cell holds each finding as a self-contained line: id, rank, `file:line`, the claim, the consequence, kind/risk, and `deps:` with `path@hash7` (7-char `git hash-object`) for every other file it cites, including files outside the scope. Example: `F2 [rank 2] src/jobs.py:30-42 release() takes a second pool connection while the first is still open; the pool can stall (behavior-change, medium) deps: src/shared/client.py@a1b2c3d`. Keep Deferred, Needs external check, Minor and Leave alone under their own headings in the same file.
 - Before reading anything run `ledger_check.py <scope>`. It lists unchanged, changed, new and removed files (empty files ignored) and marks each stored finding `carry` or `RE-VERIFY`. Exit code 0 means nothing changed and every finding is carried: write the report from the ledger without opening any file.
 - Unchanged file: do not re-read. Its findings may be carried into the new report as "carried (hash unchanged since <date>)" with their original `file:line`; they count as verified, and carried findings may omit the snippet. A finding is carried only if its row's file and every `deps:` hash are unchanged; otherwise re-verify it or drop it.
 - Changed or new file: read it in full and rewrite its row, dropping findings the new code no longer supports. Rows of files that import or are imported by a changed file are suspect if a finding depends on them.
 - Reach goes stale even when a hash does not: always re-run `trace.py` for carried findings that propose moving, merging, renaming or removing. Still run the project's cheap checks when every hash matches.
-- After the run record each file you read in full: `ledger_check.py stamp <ledger> <file> --summary ... --decisions ... --findings ...` (writes hash and date; cells you do not pass are kept). Never edit another area's ledger; parallel reviewers each own one.
+- After the run record each file you read in full: `ledger_check.py stamp <ledger> <file> --summary ... --decisions ... --findings-file <path>` (writes hash and date; cells you do not pass are kept). Write the findings cell to a file first (for example `.claude/state/review/tmp/<area>-findings.txt`) and pass its path: finding text holds backticks and quotes that a shell would mangle, so never put it on the command line. Let `stamp` write the rows; do not reformat the table by hand. Never edit another area's ledger; parallel reviewers each own one.
 - The ledger is a cache. If it contradicts the code, the code wins and the row is corrected.
 
 ## Output

@@ -18,7 +18,8 @@ REL = {"calls", "imports", "imports_from", "references", "uses", "inherits", "in
 
 
 def norm(p):
-    return (p or "").replace("\\", "/")
+    p = (p or "").replace("\\", "/")
+    return p[2:] if p.startswith("./") else p
 
 
 def build(path):

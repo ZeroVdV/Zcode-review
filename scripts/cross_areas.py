@@ -13,7 +13,7 @@ import importlib.util
 import os
 from collections import defaultdict
 
-from _common import norm, read_text, utf8
+from _common import clean, read_text, under, utf8
 
 
 def load_build():
@@ -29,7 +29,7 @@ def parse_areas(path):
         line = line.split("#", 1)[0].strip()
         if ":" in line:
             name, paths = line.split(":", 1)
-            areas[name.strip()] = [norm(p).rstrip("/") for p in paths.split()]
+            areas[name.strip()] = [clean(p) for p in paths.split()]
     return areas
 
 
@@ -37,8 +37,9 @@ def area_of(f, areas):
     best, best_len = None, -1
     for name, paths in areas.items():
         for p in paths:
-            if (f == p or f.startswith(p + "/")) and len(p) > best_len:  # the most specific path wins
-                best, best_len = name, len(p)
+            n = 0 if p == "." else len(p)
+            if under(f, p) and n > best_len:  # the most specific path wins
+                best, best_len = name, n
     return best
 
 

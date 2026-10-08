@@ -8,11 +8,11 @@ Code-looking spans (containing ( = [ or {) in backticks on the same report line 
 file(s); one that is not found is only a WARN (the report may paraphrase). Exit code 1 if any citation is BAD.
 Catches invented or stale references; it cannot tell whether the finding is right."""
 
+import os
 import re
-import subprocess
 import sys
 
-from _common import norm, read_text, utf8
+from _common import git_files, norm, read_text, utf8
 
 CODE_EXT = {"py", "js", "ts", "tsx", "jsx", "go", "rs", "java", "rb", "php", "md", "sql", "json", "yml", "yaml",
             "toml", "sh", "html", "css", "cs", "kt", "swift", "c", "h", "cpp", "txt", "cfg", "ini"}
@@ -22,9 +22,7 @@ CODEISH = re.compile(r"[(=\[{]")
 
 
 def known_files():
-    out = subprocess.run(["git", "ls-files", "--cached", "--others", "--exclude-standard"],
-                         capture_output=True, text=True, encoding="utf-8").stdout.split("\n")
-    return [norm(f) for f in out if f]
+    return [norm(f) for f in git_files(".") or [] if os.path.isfile(f)]
 
 
 def resolve(path, files):

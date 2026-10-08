@@ -1,22 +1,22 @@
 """Briefing for a review scope, from facts a script can get exactly. No LLM, no tokens.
 
 Usage: python prepare.py <scope> [<scope> ...] [--graph graphify-out/graph.json] [--env-example .env.example]
-                         [--markers EXTRA ...]
+                         [--markers EXTRA ...] [--ext EXT ...]
 
 Prints: size of the scope, graph freshness, who depends on the scope from outside and what it depends
 on outside, deferral markers (TODO/FIXME/HACK/XXX plus any --markers you pass), env vars read vs documented in the example
 env file, and long SQL strings repeated in more than one place (Python only).
-Never reads the real .env. Static only: confirm every item in the code."""
+The scope is its source files (what git does not ignore, known extensions plus any --ext you pass); real env
+files (.env, .env.local) are never read. Static only: confirm every item in the code."""
 
 import argparse
 import ast
 import importlib.util
 import os
 import re
-import subprocess
 from collections import defaultdict
 
-from _common import norm, read_text, scope_files, utf8
+from _common import all_files, clean, count_lines, is_secret_env, read_text, scope_files, utf8
 
 DEFAULT_MARKERS = ["TODO", "FIXME", "HACK", "XXX"]
 ENV_USE = [re.compile(p) for p in (
@@ -41,7 +41,7 @@ def section(title):
 
 def show_scope(files):
     section("Scope")
-    sizes = {f: read_text(f).count("\n") for f in files}
+    sizes = {f: count_lines(f) for f in files}
     print(f"{len(files)} files, {sum(sizes.values())} lines")
     for f, n in sorted(sizes.items(), key=lambda x: -x[1])[:5]:
         print(f"  {n:5d}  {f}")
@@ -97,6 +97,8 @@ def show_env(files, example):
     if not uses:
         print("none")
         return
+    if example and is_secret_env(example):
+        raise SystemExit(f"{example}: looks like a real env file, not an example; refusing to read it")
     ex = example if example and os.path.isfile(example) else next(
         (c for c in (".env.example", ".env.sample", "env.example") if os.path.isfile(c)), None)
     documented = {m.group(1) for line in read_text(ex).splitlines() if (m := ENV_DEF.match(line))} if ex else set()
@@ -107,17 +109,18 @@ def show_env(files, example):
 
 
 def show_repeated_sql(files):
-    section("Long SQL strings repeated in more than one place (Python files tracked by git)")
-    tracked = subprocess.run(["git", "ls-files", "*.py"], capture_output=True, text=True, encoding="utf-8").stdout.split()
+    section("Long SQL strings repeated in more than one place (Python files of the repository)")
     seen = defaultdict(list)
-    for f in tracked:
+    for f in all_files("."):
+        if not f.endswith(".py"):
+            continue
         try:
             tree = ast.parse(read_text(f))
-        except SyntaxError:
+        except (SyntaxError, ValueError, RecursionError, OSError):
             continue
         for node in ast.walk(tree):
             if isinstance(node, ast.Constant) and isinstance(node.value, str) and len(node.value) >= 60 and SQL_START.match(node.value):
-                seen[" ".join(node.value.lower().split())].append(f"{norm(f)}:{node.lineno}")
+                seen[" ".join(node.value.lower().split())].append(f"{f}:{node.lineno}")
     scope_set = set(files)
     hits = [(k, v) for k, v in seen.items() if len(set(v)) > 1 and any(x.rsplit(":", 1)[0] in scope_set for x in v)]
     if not hits:
@@ -134,11 +137,12 @@ def main():
     ap.add_argument("--graph", default="graphify-out/graph.json")
     ap.add_argument("--env-example", default="")
     ap.add_argument("--markers", nargs="*", default=[], help="extra literal markers, e.g. a project-specific tag")
+    ap.add_argument("--ext", nargs="*", default=[], help="extra source extensions to count as reviewable")
     a = ap.parse_args()
-    files = sorted({f for s in a.scope for f in scope_files(s)})
+    files = sorted({f for s in a.scope for f in scope_files(s, a.ext)})
     if not files:
-        raise SystemExit(f"{a.scope}: no files")
-    print(f"# Briefing: {' '.join(norm(s) for s in a.scope)}")
+        raise SystemExit(f"{a.scope}: no source files (pass --ext for an extension the scripts do not know)")
+    print(f"# Briefing: {' '.join(clean(s) for s in a.scope)}")
     show_scope(files)
     show_graph(files, a.graph, set(files))
     show_markers(files, a.markers)
