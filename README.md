@@ -39,7 +39,7 @@ What the code cannot prove (an API's behavior, a database schema, an env value) 
 From a terminal `claude` session:
 
 ```
-/plugin marketplace add ZeroVdV/review-kit
+/plugin marketplace add ZeroVdV/Zcode-review
 /plugin install review-kit@review-kit
 ```
 
