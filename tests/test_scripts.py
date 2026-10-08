@@ -12,7 +12,7 @@ import unittest
 
 SCRIPTS = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "scripts")
 QUERY = "select id, amount, status from invoices where status = 'open' and due_date < now() order by id"
-LEDGER = ".claude/state/review/ledger/billing.md"
+LEDGER = ".claude/state/review/ledger/src-billing.md"
 
 FILES = {
     "src/shared/client.py": 'import os\n\nURL = os.environ.get("SERVICE_URL")\nTOKEN = os.getenv("SERVICE_TOKEN")\n\n\n'
@@ -162,6 +162,26 @@ class DotScope(Repo):
         _, out = self.run_script("ledger_check", ".")
         self.assertIn("ledger/root.md", out)
 
+    def test_same_named_folders_get_their_own_ledger(self):
+        self.write("src/a/utils/x.py", "x = 1\n")
+        self.write("src/b/utils/x.py", "x = 2\n")
+        self.assertIn("ledger/src-a-utils.md", self.run_script("ledger_check", "src/a/utils")[1])
+        self.assertIn("ledger/src-b-utils.md", self.run_script("ledger_check", "./src/b/utils/")[1])
+
+    def test_trace_without_a_graph_says_so(self):
+        code, out = self.run_script("trace", "src/shared/client.py", "--graph", "missing.json")
+        self.assertNotEqual(code, 0)
+        self.assertIn("no graph at missing.json", out)
+        self.assertNotIn("Traceback", out)
+
+
+class Inventory(Repo):
+    def test_loose_files_over_the_cap_are_flagged(self):
+        for name in ("one", "two", "three"):
+            self.write(f"src/{name}.py", "x = 1\n" * 40)
+        out = self.ok("inventory", ".", "--cap", "50")
+        self.assertRegex(out, r"src-files\s+120 lines\s+3 files\s+OVERSIZE")
+
 
 class Ledger(Repo):
     def test_second_run_is_clean_without_stamping_non_source_files(self):
@@ -242,6 +262,24 @@ class VerifyRefs(Repo):
     def test_bad_citations_fail(self):
         self.write("report.md", "1. src/billing/jobs.py:3 real\n2. src/billing/jobs.py:999 past the end\n"
                                 "3. src/nope/missing.py:4 invented\n")
+        code, out = self.run_script("verify_refs", "report.md")
+        self.assertEqual(code, 1)
+        self.assertIn("1 ok, 2 bad", out)
+
+    def test_every_source_extension_and_bracket_paths_are_checked(self):
+        self.write("src/app/widget.vue", "<script>\nlet a = 1\n</script>\n")
+        self.write("src/app/[id]/(group)/page.tsx", "export default 1\n")
+        self.write("report.md", "1. src/app/widget.vue:2 and src/app/[id]/(group)/page.tsx:1 are real\n"
+                                "2. in a link [jobs](src/billing/jobs.py:3) and in brackets (src/billing/jobs.py:1-3)\n")
+        self.assertIn("4 ok, 0 bad", self.ok("verify_refs", "report.md"))
+        self.write("report.md", "1. src/app/widget.vue:99\n2. src/app/[id]/(group)/page.tsx:99\n"
+                                "3. src/app/[nope]/page.tsx:1\n")
+        code, out = self.run_script("verify_refs", "report.md")
+        self.assertEqual(code, 1)
+        self.assertIn("0 ok, 3 bad", out)
+
+    def test_line_zero_and_reversed_ranges_are_bad(self):
+        self.write("report.md", "1. src/billing/jobs.py:0\n2. src/billing/jobs.py:8-3\n3. src/billing/jobs.py:3-8\n")
         code, out = self.run_script("verify_refs", "report.md")
         self.assertEqual(code, 1)
         self.assertIn("1 ok, 2 bad", out)

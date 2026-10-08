@@ -3,7 +3,8 @@
 Usage: python verify_refs.py <report.md>
 
 For each `path:line` or `path:start-end`: the file must exist (a partial path or bare file name is resolved
-against the files git knows; ambiguous names pass if any candidate fits) and the line must be inside the file.
+against the files git knows; ambiguous names pass if any candidate fits) and the line must be inside the file:
+at least 1, a range in order, not past the end.
 Code-looking spans (containing ( = [ or {) in backticks on the same report line are looked up in the cited
 file(s); one that is not found is only a WARN (the report may paraphrase). Exit code 1 if any citation is BAD.
 Catches invented or stale references; it cannot tell whether the finding is right."""
@@ -12,11 +13,12 @@ import os
 import re
 import sys
 
-from _common import git_files, norm, read_text, utf8
+from _common import SOURCE_EXT, git_files, norm, read_text, utf8
 
-CODE_EXT = {"py", "js", "ts", "tsx", "jsx", "go", "rs", "java", "rb", "php", "md", "sql", "json", "yml", "yaml",
-            "toml", "sh", "html", "css", "cs", "kt", "swift", "c", "h", "cpp", "txt", "cfg", "ini"}
-CITE = re.compile(r"(?<![\w./\\-])((?:[\w.-]+[/\\])*[\w.-]+\.([A-Za-z0-9]{1,5})):(\d+)(?:-(\d+))?")
+CODE_EXT = SOURCE_EXT | {"md", "rst", "txt", "json", "yml", "yaml", "toml", "cfg", "ini", "xml"}
+# a path part may hold [ ] ( ) @ +, as in route folders such as `[id]` or `(group)`
+PART = r"[\w.@+()\[\]-]+"
+CITE = re.compile(r"(?<![\w.@+()\[\]/\\-])((?:" + PART + r"[/\\])*" + PART + r"\.([A-Za-z0-9]{1,7})):(\d+)(?:-(\d+))?")
 SPAN = re.compile(r"`([^`\n]+)`")
 CODEISH = re.compile(r"[(=\[{]")
 
@@ -26,8 +28,15 @@ def known_files():
 
 
 def resolve(path, files):
+    """Files the cited path may mean. A bracket that opened before the path, as in `(src/jobs.py:3)` or a markdown
+    link, is dropped when the path does not resolve with it."""
     p = norm(path)
-    return [f for f in files if f == p or f.endswith("/" + p)]
+    while True:
+        hits = [f for f in files if f == p or f.endswith("/" + p)]
+        cut = min((i for i in (p.find("("), p.find("[")) if i >= 0), default=-1)
+        if hits or cut < 0:
+            return hits
+        p = p[cut + 1:]
 
 
 def main():
@@ -52,6 +61,10 @@ def main():
             if ext not in CODE_EXT:
                 continue
             end = int(b) if b else a
+            if a < 1 or end < a:
+                bad += 1
+                problems.append(f"  BAD  report:{n}  {path}:{a}{'-' + b if b else ''}  not a line or range (lines start at 1)")
+                continue
             cands = resolve(path, files)
             if not cands:
                 bad += 1

@@ -1,6 +1,6 @@
 """Compare a review ledger with the files as they are now. No LLM, no tokens.
 
-Check:  python ledger_check.py <scope> [<scope> ...] [--ledger .claude/state/review/ledger/<last dir of scope>.md]
+Check:  python ledger_check.py <scope> [<scope> ...] [--ledger .claude/state/review/ledger/<scope-slug>.md]
                                [--ext EXT ...]
 Stamp:  python ledger_check.py stamp <ledger> <file> [--summary S] [--decisions D]
                                [--findings F | --findings-file PATH | --findings-file -]
@@ -52,8 +52,10 @@ def split_findings(cell):
 
 
 def default_ledger(scope):
+    """The whole scope path as a slug (`src/billing` -> `src-billing`), so same-named folders do not share a ledger."""
     scope = clean(scope)
-    return f".claude/state/review/ledger/{'root' if scope == '.' else os.path.basename(scope)}.md"
+    slug = "root" if scope == "." else re.sub(r"[^\w.+-]+", "-", scope).strip("-")
+    return f".claude/state/review/ledger/{slug}.md"
 
 
 def check(scopes, ledger, ext=()):

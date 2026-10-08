@@ -11,8 +11,11 @@ means "no callers in the graph", not "dead". Confirm in the code before removing
 
 import argparse
 import json
+import os
 import sys
 from collections import defaultdict, deque
+
+from _common import utf8
 
 REL = {"calls", "imports", "imports_from", "references", "uses", "inherits", "indirect_call"}
 
@@ -70,6 +73,9 @@ def main():
     ap.add_argument("--entry", nargs="*", default=[])
     ap.add_argument("--max", type=int, default=40)
     a = ap.parse_args()
+    utf8()
+    if not os.path.isfile(a.graph):
+        sys.exit(f"no graph at {a.graph}: run `graphify update .` first, or trace with grep")
     up, down = build(a.graph)
     f, entries = norm(a.file), {norm(e) for e in a.entry}
     if f not in up and f not in down:

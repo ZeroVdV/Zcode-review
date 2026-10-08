@@ -59,7 +59,8 @@ def split(node, cap, soft=1.25):
         return [([node.path or "."], node.lines, node.files, node.lines > cap * soft)]
     small, finals = [], []
     if node.own:
-        small.append(([f for f, _ in node.own], sum(n for _, n in node.own), len(node.own), False))
+        own = sum(n for _, n in node.own)
+        small.append(([f for f, _ in node.own], own, len(node.own), own > cap * soft))
     for name in sorted(node.kids):
         kid = node.kids[name]
         if kid.lines <= cap * soft or not kid.kids:
