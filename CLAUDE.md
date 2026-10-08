@@ -8,4 +8,4 @@ This repository is **public**. Everything in it (code, docs, examples, tests, co
 - A project-specific tag or convention is an option or an argument (like `prepare.py --markers`), never a default.
 - Before committing, search the diff for names that do not belong to this project and remove them. Before opening a pull request, read its title and body with the same question.
 
-Technical notes: the scripts need only Python 3 and git; keep them stdlib-only and read-only on the target project. Reports and ledgers are written under `.claude/state/review/` of the project being reviewed, not here.
+Technical notes: the scripts need only Python 3 and git; keep them stdlib-only and read-only on the target project. Reports and ledgers are written under `.review-kit/` of the project being reviewed, not here.
