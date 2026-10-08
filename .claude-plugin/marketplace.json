@@ -1,0 +1,14 @@
+{
+  "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
+  "name": "review-kit",
+  "description": "Review skills: structure, cleanup, refactor plan, whole-project orchestrator.",
+  "owner": { "name": "augusto" },
+  "plugins": [
+    {
+      "name": "review-kit",
+      "description": "Read-only structure and cleanup reviews, a refactor planner and a whole-project orchestrator.",
+      "source": "./",
+      "category": "productivity"
+    }
+  ]
+}
